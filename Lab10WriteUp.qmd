@@ -136,26 +136,115 @@ To help us think about the interpretation, something that was challenging before
 ## Part a
 Suppose a player has a 50\% chance of winning a specific leg, that is let $p=0.50$. Let's look at the probability they win ($x=6$) legs in the match. Compute this probability over a sequence from $\theta=0.5$ to $\theta=1.5$ and plot it using a line where the $x$-axis is $\theta$ and the $y$-axis is $P(X=6)$.
 
+**Solution**
+
+```{r}
+#| label: fig-parta
+#| fig-cap: "Win Probability by Theta"
+#| echo: false
+#| fig-width: 6
+#| fig-height: 4
+df = tibble(theta = seq(from=0,to=1.5,by=.1)) |> 
+  mutate(prob = daltbinom(x=6,size=11,prob=.5,theta=theta))
+
+(df)
+plot = ggplot() +
+  geom_line(data=df,aes(x=theta,y=prob),stat="identity")
+
+(plot)
+```
+
 ## Part b
 Now, plot Altham's Multiplicative Binomial Distribution under the same parameters with $\theta=0.50$, $\theta=1$, and $\theta=1.5$. Use `ncol=1` in `facet_wrap()` to plot the PMFs in a single column for comparing.
+
+**Solution**
+
+```{r}
+#| label: fig-partb
+#| fig-cap: "Altham's Multiplicative Binomial PMF with n = 11"
+#| echo: false
+#| fig-width: 6
+#| fig-height: 4
+
+df = tibble(x = seq(from=0,to=11,by=1)) |>
+  mutate(
+          theta05 = daltbinom(x,11,.5,.5),
+          theta1 = daltbinom(x,11,.5,1),
+          theta15 = daltbinom(x,11,.5,1.5))
+
+
+df = pivot_longer(df,cols=c(theta05,theta1,theta15),names_to="theta", values_to="prob")
+
+plot = ggplot() +
+  geom_linerange(data = df, aes(x=x,ymin=0,ymax=prob)) +
+  geom_hline(yintercept = 0) +
+  scale_x_continuous("x",breaks=0:11) + 
+  ylab("Probability") + 
+  theme_bw() +
+  facet_wrap(~theta,ncol=1)
+
+(plot)
+
+```
 
 ## Part c
 What is your best assessment of what $\theta$ is doing in this setting. Consider when a 6-0 blowout is most likely, and when a 5-6 nail-biter is most likely. Note here we should treat the match as a fixed $n=11$ as we did for $n=3$ in Lab 8.\
 **Note:** In lab 8, we saw that small $\theta$ meant wins came in bunches (clumped together), so there were more 2-0 wins in a best of three series.
+
+**Solution**
+
+Theta seems to affect the weight of the tails of the distribution. As theta increases, the tail weight decreases as probability mass shift towards the mean. As the mass shift towards the mean, it's more likely for both teams to win at least some games. Taking the note as a suggestion, we'd expect the $6-0$ blowout to be an example of the "bunches" of wins that were observed with a small theta in lab $8$.
 
 # Question 2
 
 ## Part a
 Altham's Multiplicative Binomial Distribution does not typically simplify to the clean $E(X)=np$ seen in the Binomial distribution, unless $\theta = 1$. Write out the expression that would need to be solved to find $E(X^k)$, and then write a function that computes it given the proposed parameter values $p$ (`prob`) and $\theta$ (`theta`).
 
+**Solution**
+
+$E(X^k) =\sum_{x=0}^{n}x^k*f_X(x) =\sum_{x=0}^{n}x^k*\frac{1}{c} {n \choose x} p^x (1-p)^{n-x} \theta^{x(n-x)}$
+
+```{r}
+
+moment = function(k,n,p,theta) {
+  sum = 0
+  for (x in 0:n) {
+    sum = sum + ((x^k) * daltbinom(x,n,p,theta)) 
+  }
+  sum
+}
+```
+
 ## Part b
 Describe how you can use your answer to part a to find Method of Moments estimates for the parameters $p$ and $\theta$ for Altham's Multiplicative Binomial Distribution based on data.
+
+**Solution**
+
+Since the distribution has two paramaters, our MOM solution would require us to equate $E(X)=\overline{x}$ and $E(X^2) = \overline{x^2}$. We can already compute $E(X)$ and $E(X^2)$ with our previously defined function, and we can calculate $\overline{x^k} = \frac{1}{n}\sum_{i=1}^{n}x_i^k$
 
 ## Part c
 Write a function that computes the log-likelihood for Altham's Multiplicative Binomial Distribution, given data (`x`) and proposed parameter values $p$ (`prob`) and $\theta$ (`theta`).
 
+**Solution**
+
+```{r}
+
+ll.altbiom = function(par,data,neg=F) {
+  p = 1 / (1 + exp(-1*par[1]))
+  theta = exp(par[2])
+  ll = sum(log(daltbinom(x=data,size=11,prob=p,theta=theta)))
+  ifelse(neg,-ll,ll)
+}
+
+```
+
 ## Part d
 Describe how you can use your answer to part c to find Maximum Likelihood estimates for the parameters $p$ and $\theta$ for Altham's Multiplicative Binomial Distribution based on data.
+
+**Solution**
+
+Given a dataset, we can use built in optimizer functionality in `R` using the optim function to minimize a given function over a provided dataset. Because the optimizer function `optim` minimizes a function, we take the negative of the provided function. minimizing the negated function is equivalent to maximizing the likelihood function.
+
 
 # Lab 10
 Peter "Snakebite" Wright is a two-time Professional Darts Corporation World Champion (2020, 2022) and a former World No. 1. He is one of the sport's most decorated players, winning nearly 50 PDC titles including the World Matchplay, UK Open, and multiple European Championships. 
@@ -187,6 +276,78 @@ In `pdc2024.csv`, I have provided the data for the 2024 Premier League season. T
   
   Summarize the data. What do the data tell us about the breakdown of the results?
 
+
+**Solution** 
+
+```{r}
+#| echo: false
+dat.pdc = read_csv("pdc2024.csv")
+dat.pdc.cleaned = dat.pdc |>
+  filter(Score != "w/o", Night <= 16) |>
+  separate_wider_delim("Score","-",names=c("WinnerLegs","LoserLegs"),cols_remove=F) |>
+  mutate(WinnerLegs = as.numeric(WinnerLegs), LoserLegs = as.numeric(LoserLegs))
+
+```
+
+```{r}
+#| label: fig-game-length_distribution
+#| fig-cap: "Distribution of game length"
+#| echo: false
+#| fig-width: 6
+#| fig-height: 4
+
+
+ggplot() +
+  geom_histogram(data=dat.pdc.cleaned,aes(x=Score),stat="count") + 
+  labs(y="Game Count")
+  theme_bw()
+```
+
+```{r}
+#| label: fig-games-won-by-player
+#| fig-cap: "Count of Games Won by Player"
+#| echo: false
+#| fig-width: 6
+#| fig-height: 4
+
+dat.pdc.cleaned |>
+  count(Winner) |>
+  ggplot(aes(x = reorder(Winner, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = NULL, y = "Games Won") +
+  theme_bw()
+```
+
+
+
+```{r}
+#| label: fig-leg-spread-by-player
+#| fig-cap: "Leg Spread By Player"
+#| echo: false
+#| fig-width: 6
+#| fig-height: 4
+
+leg_spread = bind_rows(
+  dat.pdc.cleaned |> select(player = Winner, legs_won = WinnerLegs, legs_lost = LoserLegs),
+  dat.pdc.cleaned |> select(player = Loser,  legs_won = LoserLegs,  legs_lost = WinnerLegs)
+) |>
+  group_by(player) |>
+  summarise(leg_spread = sum(legs_won) - sum(legs_lost))
+
+
+leg_spread |>
+  arrange(leg_spread) |>
+  mutate(player = factor(player, levels = player)) |> 
+  ggplot(aes(x = leg_spread, y = player)) +
+  geom_col() +
+  geom_vline(xintercept = 0, linewidth = 0.8) +
+  labs(x = "Leg Spread", y = NULL, title = "Leg Spread by Player") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+```
+
 ## Altham's Multiplicative Binomial Distribution
 For each player in the 2024 season, use the number of legs won in each match to compute maximium likelihood estimates for $p$ and $\theta$. \
 **Note**: The "for each" here can be done more efficiently with a function or a loop!
@@ -196,6 +357,42 @@ For each player in the 2024 season, use the number of legs won in each match to 
 **Note:** In Lecture on Monday, we used transformations to restrict how `optim()` searches the parameter space. For example, here, you might consider
 `p <- 1/(1+exp(-par[1]))` and `theta <- exp(par[2])`.
 * Make comments about the MLEs in the context of the standings.
+
+**Solution**
+
+```{r}
+
+find_mle = function(df,player) {
+  legs = bind_rows(
+    dat.pdc.cleaned |> filter(Winner == player) |> select(legs = WinnerLegs),
+    dat.pdc.cleaned |> filter(Loser == player)  |> select(legs = LoserLegs)
+  )$legs
+  
+  maxll = optim(par=c(.5,1),
+          fn = ll.altbiom,
+          data = legs,
+          neg=T)
+  maxll
+}
+
+
+players = unique(union(dat.pdc.cleaned$Winner,dat.pdc.cleaned$Loser))
+df.altbinom.mle = tibble(player = players, theta = NA, p = NA)
+
+for (player in players) {
+  mle = find_mle(dat.pdc.cleaned, player)
+  df.altbinom.mle[df.altbinom.mle$player == player, "p"]     = 1 / (1 + exp(-1*mle$par[1]))
+  df.altbinom.mle[df.altbinom.mle$player == player, "theta"] = exp(mle$par[2])
+}
+```
+
+```{r}
+#| echo: false
+#| label: tbl-altbinom-MLE-by-player
+#| tbl-cap: "MLE Estimation for Altbinom by Player"
+
+df.altbinom.mle |> knitr::kable(digits=2)
+```
 
 ## Altham's Multiplicative Beta Binomial Distribution
 

@@ -283,7 +283,7 @@ In `pdc2024.csv`, I have provided the data for the 2024 Premier League season. T
 #| echo: false
 dat.pdc = read_csv("pdc2024.csv")
 dat.pdc.cleaned = dat.pdc |>
-  filter(Score != "w/o", Night <= 16) |>
+  filter(Night != "Finals", Score != "w/o") |>
   separate_wider_delim("Score","-",names=c("WinnerLegs","LoserLegs"),cols_remove=F) |>
   mutate(WinnerLegs = as.numeric(WinnerLegs), LoserLegs = as.numeric(LoserLegs))
 
@@ -296,10 +296,9 @@ dat.pdc.cleaned = dat.pdc |>
 #| fig-width: 6
 #| fig-height: 4
 
-
 ggplot() +
   geom_histogram(data=dat.pdc.cleaned,aes(x=Score),stat="count") + 
-  labs(y="Game Count")
+  labs(y="Game Count") +
   theme_bw()
 ```
 
@@ -322,30 +321,43 @@ dat.pdc.cleaned |>
 
 
 ```{r}
+#| label: tbl-leg-spread-by-player
+#| tbl-cap: "Leg Spread By Player"
+#| echo: false
+
+dat.pdc.long = dat.pdc.cleaned |>
+  pivot_longer(cols = c(Winner, Loser), names_to = "Status", values_to = "player") |>
+  mutate(
+    LegsWon  = if_else(Status == "Winner", WinnerLegs, LoserLegs),
+    LegsLost = if_else(Status == "Winner", LoserLegs, WinnerLegs)
+  )
+
+
+dat.pdc.summary = dat.pdc.long |>
+  group_by(player) |>
+  summarise(TotalWon = sum(LegsWon), TotalLost = sum(LegsLost), legSpread = TotalWon - TotalLost) |>
+  arrange(legSpread)
+
+table = dat.pdc.summary |>
+  knitr::kable(digits=2)
+
+(table)
+```
+```{r}
 #| label: fig-leg-spread-by-player
 #| fig-cap: "Leg Spread By Player"
 #| echo: false
 #| fig-width: 6
 #| fig-height: 4
 
-leg_spread = bind_rows(
-  dat.pdc.cleaned |> select(player = Winner, legs_won = WinnerLegs, legs_lost = LoserLegs),
-  dat.pdc.cleaned |> select(player = Loser,  legs_won = LoserLegs,  legs_lost = WinnerLegs)
-) |>
-  group_by(player) |>
-  summarise(leg_spread = sum(legs_won) - sum(legs_lost))
-
-
-leg_spread |>
-  arrange(leg_spread) |>
+player.summary |>
   mutate(player = factor(player, levels = player)) |> 
-  ggplot(aes(x = leg_spread, y = player)) +
+  ggplot(aes(x = legSpread, y = player)) +
   geom_col() +
   geom_vline(xintercept = 0, linewidth = 0.8) +
   labs(x = "Leg Spread", y = NULL, title = "Leg Spread by Player") +
   theme_bw() +
   theme(legend.position = "none")
-
 ```
 
 ## Altham's Multiplicative Binomial Distribution
@@ -362,14 +374,14 @@ For each player in the 2024 season, use the number of legs won in each match to 
 
 ```{r}
 
-find_mle = function(df,player) {
-  legs = bind_rows(
-    dat.pdc.cleaned |> filter(Winner == player) |> select(legs = WinnerLegs),
-    dat.pdc.cleaned |> filter(Loser == player)  |> select(legs = LoserLegs)
-  )$legs
+find_mle = function(df,ll.func,guess,player) {
+  legs = c(
+    dat.pdc.cleaned$WinnerLegs[dat.pdc.cleaned$Winner == player],
+    dat.pdc.cleaned$LoserLegs[dat.pdc.cleaned$Loser == player]
+  )
   
-  maxll = optim(par=c(.5,1),
-          fn = ll.altbiom,
+  maxll = optim(par=guess,
+          fn = ll.func,
           data = legs,
           neg=T)
   maxll
@@ -377,10 +389,21 @@ find_mle = function(df,player) {
 
 
 players = unique(union(dat.pdc.cleaned$Winner,dat.pdc.cleaned$Loser))
+
+player_legs = list()
+for (player in players) {
+  legs = c(
+    dat.pdc.cleaned$WinnerLegs[dat.pdc.cleaned$Winner == player],
+    dat.pdc.cleaned$LoserLegs[dat.pdc.cleaned$Loser == player]
+  )
+  player_legs[[player]] = legs
+}
+(player_legs)
+
 df.altbinom.mle = tibble(player = players, theta = NA, p = NA)
 
 for (player in players) {
-  mle = find_mle(dat.pdc.cleaned, player)
+  mle = find_mle(dat.pdc.cleaned, ll.func = ll.altbiom,guess = c(.5,1),  player=player)
   df.altbinom.mle[df.altbinom.mle$player == player, "p"]     = 1 / (1 + exp(-1*mle$par[1]))
   df.altbinom.mle[df.altbinom.mle$player == player, "theta"] = exp(mle$par[2])
 }
@@ -411,6 +434,21 @@ For each player in the 2024 season, use the number of legs won in each match to 
 \end{align*}
 * Make comments about the MLEs in the context of the standings.\
 **Note**: The players alternate who throws first in a leg has the mathematical "head start" to reach a finish before their opponent can take another turn. Players alternate who throws first with each leg.
+
+
+**Solution**
+
+```{r}
+ll.altbbinom = function(par,data,neg=F) {
+  alpha = exp(par[1])
+  beta = exp(par[2])
+  theta = exp(par[3])
+  probvec = daltbbinom(0:6,11,alpha,beta,theta)
+  ll = sum(log(probvec[data + 1]))
+  ifelse(neg,-ll,ll)
+}
+
+```
 
 ## Executive Summary
 Summarize the work you've done here to provide a brief (200-300 word) data-driven summary of the 2024 Premier League season using your work in Lab 10. Your summary should be professional, clear, and all claims should be corroborated with statistical support.

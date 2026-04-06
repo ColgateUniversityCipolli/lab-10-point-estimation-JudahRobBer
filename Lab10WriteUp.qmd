@@ -350,7 +350,7 @@ table = dat.pdc.summary |>
 #| fig-width: 6
 #| fig-height: 4
 
-player.summary |>
+dat.pdc.summary |>
   mutate(player = factor(player, levels = player)) |> 
   ggplot(aes(x = legSpread, y = player)) +
   geom_col() +
@@ -373,6 +373,7 @@ For each player in the 2024 season, use the number of legs won in each match to 
 **Solution**
 
 ```{r}
+#| echo: False
 
 find_mle = function(df,ll.func,guess,player) {
   legs = c(
@@ -390,17 +391,10 @@ find_mle = function(df,ll.func,guess,player) {
 
 players = unique(union(dat.pdc.cleaned$Winner,dat.pdc.cleaned$Loser))
 
-player_legs = list()
-for (player in players) {
-  legs = c(
-    dat.pdc.cleaned$WinnerLegs[dat.pdc.cleaned$Winner == player],
-    dat.pdc.cleaned$LoserLegs[dat.pdc.cleaned$Loser == player]
-  )
-  player_legs[[player]] = legs
-}
-(player_legs)
 
 df.altbinom.mle = tibble(player = players, theta = NA, p = NA)
+df.altbinom.mle = df.altbinom.mle |>
+  mutate(rank = case_when(player == "Peter Wright" ~ 8, player == "Gerwyn Price" ~ 7, player == "Rob Cross" ~ 6, player == "Nathan Aspinall" ~ 5, player =="Michael Smith" ~ 4, player == "Michael van Gerwen" ~ 3, player == "Luke Humphries" ~ 2, player == "Luke Littler" ~ 1))
 
 for (player in players) {
   mle = find_mle(dat.pdc.cleaned, ll.func = ll.altbiom,guess = c(.5,1),  player=player)
@@ -412,10 +406,24 @@ for (player in players) {
 ```{r}
 #| echo: false
 #| label: tbl-altbinom-MLE-by-player
-#| tbl-cap: "MLE Estimation for Altbinom by Player"
+#| tbl-cap: "MLE Estimation for Altham's Multi Binomial by Player"
 
-df.altbinom.mle |> knitr::kable(digits=2)
+df.altbinom.mle |> arrange(rank) |> knitr::kable(digits=2)
 ```
+
+```{r}
+#| echo: false
+#| label: tbl-altbinom-cor-summary
+#| tbl-cap: "Correlation of p and theta estimates with rank for Altham's Multi. Binomial"
+df.altbinom.mle |> summarize( 
+rank_theta_cor = cor(x = rank, y = theta),
+rank_p_cor = cor(x =rank, y = p)
+) |> knitr::kable(digits = 2)
+```
+
+As seen in @tbl-altbinom-MLE-by-player, the estimated single game win probability is monotonically decreasing with rank, consistent with the idea that a player who is more likely to win a random game can be broadly expected to perform better overall, this is supported by the correlation of $-.95$ shown in @tbl-altbinom-cor-summary. The relationshop betweeen rank and theta isn't as clear, but there is a also large negative correlation between rank and theta. Given the limited number of datapoints, correlation analysis has only limited utility.
+
+
 
 ## Altham's Multiplicative Beta Binomial Distribution
 
@@ -439,6 +447,7 @@ For each player in the 2024 season, use the number of legs won in each match to 
 **Solution**
 
 ```{r}
+#| echo: False
 ll.altbbinom = function(par,data,neg=F) {
   alpha = exp(par[1])
   beta = exp(par[2])
@@ -448,7 +457,71 @@ ll.altbbinom = function(par,data,neg=F) {
   ifelse(neg,-ll,ll)
 }
 
+
+df.altbbinom.mle = tibble(player = players, theta = NA, alpha = NA, beta = NA)
+df.altbbinom.mle = df.altbbinom.mle |>
+  mutate(rank = case_when(player == "Peter Wright" ~ 8, player == "Gerwyn Price" ~ 7, player == "Rob Cross" ~ 6, player == "Nathan Aspinall" ~ 5, player =="Michael Smith" ~ 4, player == "Michael van Gerwen" ~ 3, player == "Luke Humphries" ~ 2, player == "Luke Littler" ~ 1))
+
+for (player in players) {
+  mle = find_mle(dat.pdc.cleaned, ll.func = ll.altbbinom,guess = c(1,1,1),  player=player)
+  df.altbbinom.mle[df.altbbinom.mle$player == player, "alpha"]  = exp(mle$par[1])
+  df.altbbinom.mle[df.altbbinom.mle$player == player, "beta"] = exp(mle$par[2])
+  df.altbbinom.mle[df.altbbinom.mle$player == player, "theta"] = exp(mle$par[3])
+}
+
+df.altbbinom.mle = df.altbbinom.mle |>
+  mutate(beta_mean = alpha / (alpha + beta), beta_var = sqrt((alpha * beta) / ((alpha + beta)^2 * (alpha + beta + 1))))
+
 ```
+
+```{r}
+#| echo: false
+#| label: tbl-altbbinom-MLE-by-player
+#| tbl-cap: "MLE Estimation for Altham's Multiplicative Beta Binomial by Player"
+
+df.altbbinom.mle |> arrange(rank) |> knitr::kable(digits=2)
+```
+
+```{r}
+#| echo: false
+#| label: tbl-altbbinom-cor-summary
+#| tbl-cap: "Correlation of alpha, beta, and theta estimates with rank for Altham's Multi.  Beta Binomial"
+df.altbbinom.mle |> summarize( 
+rank_theta_cor = cor(x = rank, y = theta),
+rank_alpha_cor = cor(x =rank, y = alpha),
+rank_beta_cor = cor(x=rank, y = beta)
+) |> knitr::kable(digits = 2)
+```
+
+
+```{r}
+#| label: fig-beta-pdf-by-player
+#| fig-cap: "MLE Beta Distribution by Player"
+#| echo: false
+#| fig-width: 6
+#| fig-height: 4
+
+dat.beta.pdf <- df.altbbinom.mle |>
+  dplyr::select(player,alpha,beta) |>
+  pmap(function(player, alpha, beta) {
+    tibble(x = seq(0, 1, by = .0001)) |>
+      mutate(
+        PDF = dbeta(x, shape1 = alpha, shape2 = beta),
+        player = player
+      )
+  }) |>
+  list_rbind()
+
+ggplot(dat.beta.pdf) +
+  geom_line(aes(x = x, y = PDF, color = player)) +
+  geom_hline(yintercept = 0) +
+  coord_cartesian(ylim = c(0, 5)) +
+  labs(x = "P", y = "Density") +
+  theme_bw()
+
+```
+
+Our MLE estimates for Altham's Multiplicative Beta Binomial show two distinct categories for the underlying beta distribution. As seen in @fig-beta-pdf-by-player, when beta and alpha were both greater than $1$, the PDF had a right skewed unimodal distribution. However when beta and alpha were less than one, the PDF took on a U-shape, with density concentrated near 0 and 1. in @tbl-altbbinom-cor-summary we see a weak positive correlation between both alpha and rank and beta and rank, and a negative correlation between rank and theta, consistent with the results from @tbl-altbinom-cor-summary.
 
 ## Executive Summary
 Summarize the work you've done here to provide a brief (200-300 word) data-driven summary of the 2024 Premier League season using your work in Lab 10. Your summary should be professional, clear, and all claims should be corroborated with statistical support.

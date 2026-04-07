@@ -338,7 +338,7 @@ dat.pdc.summary = dat.pdc.long |>
   summarise(TotalWon = sum(LegsWon), TotalLost = sum(LegsLost), legSpread = TotalWon - TotalLost) |>
   arrange(legSpread)
 
-table = dat.pdc.summary |>
+table = dat.pdc.summary |> rename(`Total Won` = TotalWon, `Total Lost` = TotalLost, `Leg Spread` = legSpread) |>
   knitr::kable(digits=2)
 
 (table)
@@ -355,7 +355,7 @@ dat.pdc.summary |>
   ggplot(aes(x = legSpread, y = player)) +
   geom_col() +
   geom_vline(xintercept = 0, linewidth = 0.8) +
-  labs(x = "Leg Spread", y = NULL, title = "Leg Spread by Player") +
+  labs(x = "Leg Spread", y = NULL) +
   theme_bw() +
   theme(legend.position = "none")
 ```
@@ -470,7 +470,7 @@ for (player in players) {
 }
 
 df.altbbinom.mle = df.altbbinom.mle |>
-  mutate(beta_mean = alpha / (alpha + beta), beta_var = sqrt((alpha * beta) / ((alpha + beta)^2 * (alpha + beta + 1))))
+  mutate(beta_mean = alpha / (alpha + beta), beta_var = (alpha * beta) / ((alpha + beta)^2 * (alpha + beta + 1)))
 
 ```
 
@@ -525,3 +525,15 @@ Our MLE estimates for Altham's Multiplicative Beta Binomial show two distinct ca
 
 ## Executive Summary
 Summarize the work you've done here to provide a brief (200-300 word) data-driven summary of the 2024 Premier League season using your work in Lab 10. Your summary should be professional, clear, and all claims should be corroborated with statistical support.
+
+**Solution** 
+
+In the following statistical summary of the Professional Dart's Premier League 2024 season we analyze player performance through both preliminary summary statistics and by fitting both Altham's Multiplicative Binomial Distribution and Altham's Multiplicative Beta Binomial Distribution by player to analyze how player performance correlates with model parameters. We performed this MLE estimation using the number of legs won in each match by player, since each leg maps onto a 'success' in our chosen modifications of the standard binomial distribution. Our analysis aims to shed light on both the utility and nuances of parametric modeling through a small case study.
+
+Firstly, the original dataset includes all matches from the 2024 season tournament, to fix match lengthes, we excluded the finals and any walkovers from our data. Our preliminary analysis in @fig-game-length_distribution showed that game length was left skewed, thus matches tended to be more even, as we would expected in a competition between similarly elite players. On the player level, we show in @fig-leg-spread-by-player that the total leg spread is associated with ranking, but that a more positive spread doesn't guarantee a higher rank. For instance, although Nathan Aspinall had a positive spread of $4$, he was lower ranked than both Michaels.
+
+In our parametric analysis, we first analyzed Altham's multiplicative binomial distribution, parametrized by $\theta$ and $p$, where $p$ corresponds to the probability of a single success, and theta is akin to a bunching parameter, where a smaller $\theta$ roughly equates more successsive successes. Our analysis in @tbl-altbinom-cor-summary found a negative correlation between both rank and $\theta$ and rank and $p$. With respect to $p$, this finding is clearly intuitive, as the rank increases (worse performance), the our estimated probability of winning a single match decreases. In other words, worse players tend to be lower ranked. We also observed a weaker negative correlation between theta and rank, which can be interpreted to show that worse players tend to have relatively more hotstreaks, but since they win less in the first place, this results in worse overall performance.
+
+Finally, our analysis of Altham's multiplicative beta binomial distribution replaces a fixed $p$ parameter with an underlying beta distribution parametrized by $\alpha$ and $\beta$. In fitting this model, in @tbl-altbbinom-cor-summary we again observed a negative correlation between rank and theta, consistent with the previous distribution. We also observed a weakly positive correlation between rank and both $\alpha$ and $\beta$. One important limitation for all of our correlation analysis is our very small sample size of players. Because of the nature of the beta distribution, since all but two players had both $\alpha$ and $\beta$ less than 1, in @fig-beta-pdf-by-player, we show that the majority of players had a heavily weighted tail distribution, resulting in a U shaped PDF. This shape complicates our interpretation of the underlying beta distribution as the distribution of individual success probability, since we would not expect the underlying win probability of any player to be very close to 0 or 1.
+
+
